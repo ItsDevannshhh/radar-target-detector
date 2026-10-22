@@ -1,0 +1,6 @@
+Model,CV Accuracy (Mean),Test Accuracy,Precision,Recall,F1-Score,ROC-AUC,Ghost Alarms (FP),Missed Targets (FN)
+Logistic Regression,92.86%,95.77%,95.74%,97.83%,96.77%,0.9817,2,1
+k-Nearest Neighbors (k=3),83.93%,83.10%,79.31%,100.00%,88.46%,0.9748,12,0
+Random Forest,95.36%,97.18%,97.83%,97.83%,97.83%,0.9643,1,1
+SVM (RBF Kernel),93.93%,95.77%,95.74%,97.83%,96.77%,0.9661,2,1
+Neural Network (MLP),93.21%,94.37%,93.75%,97.83%,95.74%,0.9861,3,1

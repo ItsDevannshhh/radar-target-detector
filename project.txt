@@ -1,0 +1,453 @@
+Every part of the code can be written right here. Below is the complete, end-to-end codebase split into two files (train_and_evaluate.py for the machine learning pipeline + report plots, and app.py for a live interactive Radar Console web app to show your teacher), followed by copy-paste prompts for Antigravity so it can automatically scaffold the workspace, run the scripts to generate the PNG charts, or build a full-stack Military Radar HUD UI.
+
+Project Folder Structure
+Create a folder named ionosphere-radar-validation with these three files:
+
+Plaintext
+ionosphere-radar-validation/
+├── requirements.txt
+├── train_and_evaluate.py   # Full ML Pipeline, EDA Plots, GridSearchCV & Model Export
+└── app.py                  # Interactive Streamlit Radar Target Validation Web App
+1. requirements.txt
+Install these libraries in your terminal (pip install -r requirements.txt):
+
+Plaintext
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+joblib
+streamlit
+2. Complete ML Pipeline (train_and_evaluate.py)
+This script automatically fetches the UCI Ionosphere dataset from GitHub (with an automatic scikit-learn OpenML fallback if college Wi-Fi blocks GitHub), drops the zero-variance a02 column, engineers physics-based radar pulse features, benchmarks all 4 models, tunes the winning RBF-SVM, and saves 4 high-resolution plots for your project report.
+
+Python
+import warnings
+warnings.filterwarnings("ignore")
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+
+from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, roc_curve, confusion_matrix, classification_report
+)
+
+# Set visual style for report plots
+sns.set_theme(style="whitegrid", palette="muted")
+plt.rcParams["figure.dpi"] = 150
+
+
+# ==========================================
+# STEP 1: LOAD DATASET (GITHUB + FALLBACK)
+# ==========================================
+def load_ionosphere_data():
+    cols = [f"a{i:02d}" for i in range(1, 35)] + ["target"]
+    github_url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/ionosphere.csv"
+    
+    try:
+        print("[1/6] Fetching UCI Ionosphere dataset from GitHub...")
+        df = pd.read_csv(github_url, header=None, names=cols)
+    except Exception as e:
+        print(f"GitHub fetch failed ({e}). Falling back to Scikit-Learn OpenML...")
+        data = fetch_openml(name="ionosphere", version=1, as_frame=True)
+        df = data.frame
+        df.columns = cols
+
+    print(f"Dataset successfully loaded! Shape: {df.shape}")
+    print(f"Class distribution:\n{df['target'].value_counts()}\n")
+    return df
+
+
+# ==========================================
+# STEP 2: PHYSICS FEATURE ENGINEERING & CLEANING
+# ==========================================
+def preprocess_and_engineer(df):
+    print("[2/6] Performing Radar Signal Preprocessing & Feature Engineering...")
+    data = df.copy()
+
+    # Separate Real (odd columns: a01, a03..a33) and Imaginary (even columns: a02, a04..a34)
+    real_cols = [f"a{i:02d}" for i in range(1, 35, 2)]
+    imag_cols = [f"a{i:02d}" for i in range(2, 35, 2)]
+
+    R = data[real_cols].values
+    I = data[imag_cols].values
+
+    # Calculate complex envelope amplitude across all 17 radar pulse lags: sqrt(Re^2 + Im^2)
+    amplitudes = np.sqrt(R**2 + I**2)
+
+    # Engineer 3 domain-specific radar features
+    data["mean_pulse_amplitude"] = np.mean(amplitudes, axis=1)
+    data["std_pulse_amplitude"] = np.std(amplitudes, axis=1)
+    # Smoothness: mean absolute lag-to-lag jump (Good returns decay smoothly; Bad noise jumps erratically)
+    data["lag_smoothness"] = np.mean(np.abs(np.diff(R, axis=1)), axis=1)
+
+    # Verify and drop Column 2 (a02) -> Imaginary part of Lag 0 is mathematically 0.0 for all rows
+    a02_variance = data["a02"].var()
+    print(f"Variance of column 'a02' (Lag 0 Imaginary): {a02_variance:.6f} -> Dropping 'a02'!")
+    data.drop(columns=["a02"], inplace=True)
+
+    # Encode Target: 'g' (Good / Valid Target) -> 1, 'b' (Bad / Ghost Noise) -> 0
+    data["target"] = data["target"].map({"g": 1, "b": 0, 1: 1, 0: 0})
+
+    X = data.drop(columns=["target"])
+    y = data["target"]
+    print(f"Final Feature Matrix Shape: {X.shape} (33 raw features + 3 engineered radar features)\n")
+    return X, y, df
+
+
+# ==========================================
+# STEP 3: GENERATE EDA PLOTS FOR REPORT
+# ==========================================
+def generate_eda_plots(df, X, y):
+    print("[3/6] Generating Exploratory Data Analysis (EDA) plots...")
+    real_cols = [f"a{i:02d}" for i in range(1, 35, 2)]
+    
+    # Plot 1: Coherent Good Signal vs Erratic Bad Signal across 17 Pulse Lags
+    good_sample = df[df["target"] == "g"].iloc[0][real_cols].values.astype(float)
+    bad_sample = df[df["target"] == "b"].iloc[1][real_cols].values.astype(float)
+    lags = np.arange(0, 17)
+
+    plt.figure(figsize=(9, 4.5))
+    plt.plot(lags, good_sample, marker="o", linewidth=2.2, label="Good Return (Valid Ionospheric Target)", color="#1f77b4")
+    plt.plot(lags, bad_sample, marker="x", linestyle="--", linewidth=2.0, label="Bad Return (Ghost / Pass-Through Noise)", color="#d62728")
+    plt.axhline(0, color="black", linewidth=0.8, alpha=0.5)
+    plt.title("Radar Autocorrelation Waveform Across 17 Pulse Lags (Real Component)", fontsize=12, fontweight="bold")
+    plt.xlabel("Pulse Lag Number (k = 0 to 16)")
+    plt.ylabel("Normalized Autocorrelation [-1, +1]")
+    plt.xticks(lags)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("1_radar_waveform_comparison.png")
+    plt.close()
+
+    # Plot 2: 2D PCA Cluster Projection
+    X_scaled = StandardScaler().fit_transform(X)
+    pca = PCA(n_components=2, random_state=42)
+    X_pca = pca.fit_transform(X_scaled)
+
+    plt.figure(figsize=(7.5, 5.5))
+    scatter = plt.scatter(
+        X_pca[:, 0], X_pca[:, 1],
+        c=y, cmap="coolwarm_r", alpha=0.8, edgecolors="k", s=55
+    )
+    plt.title("2D PCA Projection: Tightly Clustered 'Good' Targets vs. Scattered 'Bad' Noise", fontsize=11, fontweight="bold")
+    plt.xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.1f}% Variance)")
+    plt.ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.1f}% Variance)")
+    handles, _ = scatter.legend_elements()
+    plt.legend(handles, ["Bad (Ghost/Noise = 0)", "Good (Valid Target = 1)"], title="Radar Return Class")
+    plt.tight_layout()
+    plt.savefig("2_pca_clusters.png")
+    plt.close()
+    print("Saved '1_radar_waveform_comparison.png' and '2_pca_clusters.png'.\n")
+
+
+# ==========================================
+# STEP 4: TRAIN & BENCHMARK 4 CLASSIFIERS
+# ==========================================
+def benchmark_models(X_train, X_test, y_train, y_test):
+    print("[4/6] Training and Benchmarking 4 ML Classifiers...")
+
+    models = {
+        "Logistic Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("clf", LogisticRegression(random_state=42, max_iter=1000))
+        ]),
+        "k-Nearest Neighbors (k=3)": Pipeline([
+            ("scaler", StandardScaler()),
+            ("clf", KNeighborsClassifier(n_neighbors=3))
+        ]),
+        "Random Forest": Pipeline([
+            ("scaler", StandardScaler()),
+            ("clf", RandomForestClassifier(n_estimators=200, random_state=42))
+        ]),
+        "SVM (RBF Kernel)": Pipeline([
+            ("scaler", StandardScaler()),
+            ("clf", SVC(kernel="rbf", probability=True, random_state=42))
+        ])
+    }
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    results = []
+    trained_models = {}
+
+    plt.figure(figsize=(8, 6))
+
+    for name, pipeline in models.items():
+        # 5-Fold Cross Validation on Training Set
+        cv_scores = cross_val_score(pipeline, X_train, y_train, cv=cv, scoring="accuracy")
+        
+        # Fit and Predict on Hold-out Test Set
+        pipeline.fit(X_train, y_train)
+        y_pred = pipeline.predict(X_test)
+        y_prob = pipeline.predict_proba(X_test)[:, 1]
+
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred)
+        rec = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_prob)
+        cm = confusion_matrix(y_test, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+
+        results.append({
+            "Model": name,
+            "CV Accuracy (Mean)": f"{cv_scores.mean()*100:.2f}%",
+            "Test Accuracy": f"{acc*100:.2f}%",
+            "Precision": f"{prec*100:.2f}%",
+            "Recall": f"{rec*100:.2f}%",
+            "F1-Score": f"{f1*100:.2f}%",
+            "ROC-AUC": f"{auc:.4f}",
+            "Ghost Alarms (FP)": fp,
+            "Missed Targets (FN)": fn
+        })
+        trained_models[name] = pipeline
+
+        # Add to ROC Curve Plot
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        plt.plot(fpr, tpr, linewidth=2, label=f"{name} (AUC = {auc:.3f})")
+
+    # Finalize ROC Curve Plot
+    plt.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Random Guess")
+    plt.title("ROC Curve Comparison — Radar Signal Target Validation", fontsize=12, fontweight="bold")
+    plt.xlabel("False Positive Rate (Ghost Alarm Rate)")
+    plt.ylabel("True Positive Rate (Target Detection Recall)")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+    plt.savefig("3_roc_curves.png")
+    plt.close()
+
+    results_df = pd.DataFrame(results)
+    print("\n================ MODEL BENCHMARK TABLE ================")
+    print(results_df.to_string(index=False))
+    print("=======================================================\n")
+    return trained_models, results_df
+
+
+# ==========================================
+# STEP 5: HYPERPARAMETER TUNING (RBF-SVM)
+# ==========================================
+def tune_best_svm(X_train, X_test, y_train, y_test):
+    print("[5/6] Running GridSearchCV Hyperparameter Tuning on RBF-SVM...")
+    
+    svm_pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", SVC(kernel="rbf", probability=True, random_state=42))
+    ])
+
+    param_grid = {
+        "clf__C": [0.5, 1, 2, 5, 10, 20],
+        "clf__gamma": ["scale", "auto", 0.01, 0.03, 0.05, 0.1]
+    }
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    grid = GridSearchCV(svm_pipeline, param_grid, cv=cv, scoring="f1", n_jobs=-1)
+    grid.fit(X_train, y_train)
+
+    best_model = grid.best_estimator_
+    y_pred = best_model.predict(X_test)
+    
+    print(f"Best SVM Parameters: {grid.best_params_}")
+    print(f"Tuned SVM Test Accuracy: {accuracy_score(y_test, y_pred)*100:.2f}%")
+    print("\nDetailed Classification Report (Tuned RBF-SVM):")
+    print(classification_report(y_test, y_pred, target_names=["Bad (Noise/Ghost)", "Good (Valid Target)"]))
+
+    # Plot Confusion Matrix for Tuned SVM
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(
+        cm, annot=True, fmt="d", cmap="Blues", cbar=False,
+        xticklabels=["Predicted: Bad (Noise)", "Predicted: Good (Target)"],
+        yticklabels=["Actual: Bad (Noise)", "Actual: Good (Target)"],
+        annot_kws={"size": 14, "weight": "bold"}
+    )
+    plt.title("Confusion Matrix — Tuned RBF-SVM Radar Validator", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig("4_confusion_matrix_svm.png")
+    plt.close()
+    print("Saved '3_roc_curves.png' and '4_confusion_matrix_svm.png'.\n")
+    
+    return best_model
+
+
+# ==========================================
+# STEP 6: EXPORT ARTIFACTS FOR STREAMLIT APP
+# ==========================================
+if __name__ == "__main__":
+    raw_df = load_ionosphere_data()
+    X, y, _ = preprocess_and_engineer(raw_df)
+    generate_eda_plots(raw_df, X, y)
+
+    # 80/20 Stratified Split (280 Train, 71 Test)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, stratify=y, random_state=42
+    )
+
+    trained_models, benchmark_df = benchmark_models(X_train, X_test, y_train, y_test)
+    best_svm = tune_best_svm(X_train, X_test, y_train, y_test)
+
+    print("[6/6] Saving trained model and test radar samples for live demo...")
+    joblib.dump(best_svm, "ionosphere_svm_pipeline.pkl")
+    benchmark_df.to_csv("benchmark_results.csv", index=False)
+    print("Done! Run `streamlit run app.py` to launch the Interactive Radar Console.")
+3. Interactive Radar Demo Web App (app.py)
+Run this file with streamlit run app.py during your presentation. It gives you a live Ionospheric Radar Target Validation Console where your teacher can pick any test radar return (or inject custom noise) and watch the classifier validate the signal in real time.
+
+Python
+import streamlit as st
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import joblib
+import os
+
+from train_and_evaluate import load_ionosphere_data, preprocess_and_engineer
+
+st.set_page_config(page_title="Goose Bay Radar Target Validator", layout="wide")
+
+st.title("📡 High-Frequency Ionospheric Radar Target Validation Console")
+st.markdown(
+    "**System:** Goose Bay 16-Antenna Phased Array | **Features:** 17 Multipulse Autocorrelation Lags (33 Active Features + 3 Physics Features) | **Model:** Tuned RBF-Kernel SVM"
+)
+
+@st.cache_resource
+def load_resources():
+    raw_df = load_ionosphere_data()
+    X, y, _ = preprocess_and_engineer(raw_df)
+    
+    if not os.path.exists("ionosphere_svm_pipeline.pkl"):
+        st.warning("Model file not found. Please run `python train_and_evaluate.py` first, or wait while training on the fly...")
+        from sklearn.model_selection import train_test_split
+        from train_and_evaluate import tune_best_svm
+        X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.20, stratify=y, random_state=42)
+        model = tune_best_svm(X_tr, X_te, y_tr, y_te)
+        joblib.dump(model, "ionosphere_svm_pipeline.pkl")
+    else:
+        model = joblib.load("ionosphere_svm_pipeline.pkl")
+        
+    return raw_df, X, y, model
+
+raw_df, X, y, model = load_resources()
+
+# Sidebar Controls
+st.sidebar.header("🎛️ Radar Return Selector")
+sample_idx = st.sidebar.slider("Select Radar Return Index (Row 0 - 350)", 0, len(X) - 1, 0)
+noise_level = st.sidebar.slider("Inject Atmospheric Interference (Noise)", 0.0, 0.8, 0.0, 0.05)
+
+# Fetch selected sample
+sample_features = X.iloc[[sample_idx]].copy()
+actual_label = y.iloc[sample_idx]
+
+# Apply optional live interference noise
+if noise_level > 0:
+    np.random.seed(42)
+    pulse_cols = [c for c in sample_features.columns if c.startswith("a")]
+    sample_features[pulse_cols] = np.clip(
+        sample_features[pulse_cols] + np.random.normal(0, noise_level, size=(1, len(pulse_cols))),
+        -1.0, 1.0
+    )
+
+# Predict
+pred_class = model.predict(sample_features)[0]
+pred_prob = model.predict_proba(sample_features)[0]
+confidence = pred_prob[pred_class] * 100
+
+# Top Metrics Row
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("Selected Return ID", f"Signal #{sample_idx}")
+with col2:
+    st.metric("Ground Truth Label", "GOOD (Valid Target)" if actual_label == 1 else "BAD (Ghost/Noise)")
+with col3:
+    st.metric("Mean Pulse Energy", f"{sample_features['mean_pulse_amplitude'].values[0]:.3f}")
+with col4:
+    st.metric("Lag-to-Lag Roughness", f"{sample_features['lag_smoothness'].values[0]:.3f}")
+
+st.divider()
+
+# Main Display: Left = Waveform Plot, Right = Classification Verdict
+left_col, right_col = st.columns([1.6, 1])
+
+with left_col:
+    st.subheader("17-Lag Complex Autocorrelation Waveform")
+    real_cols = [f"a{i:02d}" for i in range(1, 35, 2)]
+    imag_cols = [f"a{i:02d}" for i in range(4, 35, 2)]  # a02 was dropped (always 0.0)
+    
+    real_vals = sample_features[real_cols].values.flatten()
+    imag_vals = np.insert(sample_features[imag_cols].values.flatten(), 0, 0.0)
+    lags = np.arange(0, 17)
+
+    fig, ax = plt.subplots(figsize=(8, 3.8))
+    ax.plot(lags, real_vals, marker="o", linewidth=2.2, label="Real Component (In-Phase)", color="#0068c9")
+    ax.plot(lags, imag_vals, marker="s", linestyle="--", linewidth=1.8, label="Imaginary Component (Quadrature)", color="#ff2b2b")
+    ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
+    ax.set_ylim(-1.15, 1.15)
+    ax.set_xticks(lags)
+    ax.set_xlabel("Radar Pulse Lag (k = 0 to 16)")
+    ax.set_ylabel("Normalized Signal Return [-1, +1]")
+    ax.legend(loc="upper right")
+    st.pyplot(fig)
+
+with right_col:
+    st.subheader("AI Target Validation Verdict")
+    if pred_class == 1:
+        st.success(f"### ✅ VALID STRUCTURE DETECTED (GOOD)\n**Confidence:** {confidence:.2f}%")
+        st.write(
+            "The autocorrelation wave shows coherent phase-shift decay across the 17 pulses, indicating structured free-electron reflection in the ionosphere."
+        )
+    else:
+        st.error(f"### 🚨 GHOST / NOISE REJECTED (BAD)\n**Confidence:** {confidence:.2f}%")
+        st.write(
+            "The signal exhibits erratic phase jumps or zero return power, indicating radar pass-through or atmospheric ghosting."
+        )
+
+    st.progress(int(pred_prob[1] * 100), text=f"Target Probability: {pred_prob[1]*100:.1f}%")
+4. Prompts for Antigravity (For Automated Execution & Advanced Full-Stack UI)
+Because I cannot execute terminal commands directly on your laptop or build a multi-container React + FastAPI app inside your local filesystem, paste either of the two prompts below directly into Antigravity:
+
+Prompt 1: Ask Antigravity to Build, Execute, and Verify the Project Automatically
+Copy-Paste into Antigravity:
+
+Plaintext
+Create a complete Python machine learning project in the current workspace for "Radar Signal Target Validation (UCI Ionosphere)".
+
+1. Create `requirements.txt` with numpy, pandas, matplotlib, seaborn, scikit-learn, joblib, and streamlit, and install them in a virtual environment.
+2. Create `train_and_evaluate.py` that:
+   - Loads the UCI Ionosphere dataset from `https://raw.githubusercontent.com/jbrownlee/Datasets/master/ionosphere.csv` (with `sklearn.datasets.fetch_openml('ionosphere', version=1)` as fallback).
+   - Verifies that feature 2 (`a02`, Lag 0 Imaginary component) has zero variance (all 0.0) and drops it.
+   - Engineers 3 physics features across the 17 complex radar pulses: `mean_pulse_amplitude` (mean of sqrt(Re^2 + Im^2)), `std_pulse_amplitude`, and `lag_smoothness` (mean absolute difference between consecutive real pulse lags).
+   - Uses an 80/20 stratified train-test split and 5-fold StratifiedKFold cross-validation to benchmark Logistic Regression, k-NN (k=3), Random Forest, and SVM (RBF kernel).
+   - Runs GridSearchCV on the RBF-SVM, exports `ionosphere_svm_pipeline.pkl` and `benchmark_results.csv`, and saves 4 high-resolution plots (`1_radar_waveform_comparison.png`, `2_pca_clusters.png`, `3_roc_curves.png`, `4_confusion_matrix_svm.png`).
+3. Run `train_and_evaluate.py` in the terminal, verify all 4 PNG plots and the `.pkl` file are generated without errors, and print the final benchmark table.
+4. Create `app.py` using Streamlit that loads `ionosphere_svm_pipeline.pkl` and allows interactive inspection of any of the 351 radar returns, plotting the 17-lag Real and Imaginary waveforms and showing the live Good/Bad target classification with a noise-injection slider.
+Prompt 2: Ask Antigravity to Upgrade the UI into a Military Radar HUD (FastAPI + React/HTML Canvas)
+If you want your project to look like a real defense system rather than a standard Streamlit page, give Antigravity this prompt:
+
+Copy-Paste into Antigravity:
+
+Plaintext
+Build a full-stack Military Radar Target Validation HUD web application around my trained `ionosphere_svm_pipeline.pkl` model:
+
+1. Backend (`backend/main.py` using FastAPI):
+   - Expose `GET /api/signals/{id}` to return the raw 17-lag Real and Imaginary autocorrelation arrays, engineered physics metrics, and ground-truth label for any row in the UCI Ionosphere dataset.
+   - Expose `POST /api/validate` that takes 34 radar pulse features (with optional noise injection), computes the 3 physics features, drops `a02`, runs inference through `ionosphere_svm_pipeline.pkl`, and returns the classification (`GOOD_TARGET` or `GHOST_NOISE`), probability score, and confusion matrix metrics.
+2. Frontend (`frontend/` using React + Tailwind CSS or a single-page HTML5/JS Cyberpunk Military Dashboard):
+   - Design a dark-mode tactical radar console (phosphor green and amber accents on deep slate).
+   - Include an animated HTML5 Canvas circular rotating radar sweep that plots "Good" targets as solid locked blips and "Bad" returns as flickering ghost blips.
+   - Add an interactive 17-Pulse Oscilloscope chart displaying the Real and Imaginary autocorrelation waves side-by-side with a live "Inject Ionospheric Jamming/Noise" slider.
+Want me to generate your complete Project Report or Presentation Slides next?
+
+Yes

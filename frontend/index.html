@@ -1,0 +1,1948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goose Bay Phased-Array Radar Target Disambiguation System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-dark: #070a12;
+      --bg-panel: #0d121f;
+      --bg-card: #121829;
+      --bg-card-hover: #192238;
+      --border-color: #1e293b;
+      --border-highlight: #334155;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --radar-cyan: #06b6d4;
+      --target-green: #10b981;
+      --target-green-glow: rgba(16, 185, 129, 0.25);
+      --noise-red: #ef4444;
+      --noise-red-glow: rgba(239, 68, 68, 0.25);
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-amber: #f59e0b;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
+    }
+
+    /* Top Command Header */
+    header {
+      background: rgba(13, 18, 31, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.75rem 1.5rem;
+    }
+
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--radar-cyan), var(--accent-blue));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.3);
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      fill: #ffffff;
+    }
+
+    .brand-text h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge-viva {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.35);
+      color: var(--radar-cyan);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .brand-text p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .telemetry-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .pill {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-muted);
+    }
+
+    .pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--target-green);
+      box-shadow: 0 0 6px var(--target-green);
+      animation: pulse 2s infinite;
+    }
+
+    .pill strong {
+      color: var(--text-main);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    /* Sub Navigation Jumpers */
+    .nav-tabs {
+      background: rgba(7, 10, 18, 0.7);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.4rem 1.5rem;
+    }
+
+    .nav-tabs-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+    }
+
+    .nav-link {
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      text-decoration: none;
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--radar-cyan);
+      background: var(--bg-card);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-left: 3px solid var(--radar-cyan);
+      padding-left: 0.75rem;
+    }
+
+    .section-title span.desc {
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* SECTION 1: RADAR HUD & 3-WAY TESTER */
+    .radar-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 1.5rem;
+      align-items: stretch;
+    }
+
+    @media (max-width: 1024px) {
+      .radar-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .radar-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .radar-viewport {
+      width: 380px;
+      height: 380px;
+      position: relative;
+      border-radius: 50%;
+      box-shadow: inset 0 0 40px rgba(6, 182, 212, 0.15), 0 0 20px rgba(6, 182, 212, 0.1);
+      border: 2px solid rgba(6, 182, 212, 0.4);
+      background: #040811;
+      overflow: hidden;
+    }
+
+    canvas#radarCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .radar-controls {
+      width: 100%;
+      margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .radar-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s;
+    }
+
+    .radar-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--radar-cyan);
+      color: var(--radar-cyan);
+    }
+
+    .radar-btn.active {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: var(--radar-cyan);
+      color: var(--radar-cyan);
+    }
+
+    /* 3-Way Signal Test Deck */
+    .tester-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .deck-tabs {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .deck-tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .deck-tab-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-card);
+    }
+
+    .deck-tab-btn.active {
+      background: var(--bg-card);
+      color: var(--radar-cyan);
+      border-color: var(--border-highlight);
+      font-weight: 600;
+    }
+
+    .deck-content {
+      display: none;
+    }
+
+    .deck-content.active {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* Presets Grid */
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .preset-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--radar-cyan);
+      background: var(--bg-card-hover);
+      transform: translateY(-1px);
+    }
+
+    .preset-btn strong {
+      font-size: 0.82rem;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .preset-btn span.tag {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    /* Custom Signal Sliders */
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .slider-header span.val {
+      color: var(--radar-cyan);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--radar-cyan);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--radar-cyan);
+      transition: all 0.15s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* CSV Upload & Export */
+    .csv-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border-color);
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(18, 24, 41, 0.4);
+    }
+
+    .dropzone:hover {
+      border-color: var(--radar-cyan);
+      background: rgba(6, 182, 212, 0.04);
+    }
+
+    .export-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .btn-action {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-action:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--radar-cyan);
+      color: var(--radar-cyan);
+    }
+
+    .btn-action.primary {
+      background: var(--radar-cyan);
+      color: #040811;
+      font-weight: 600;
+      border: none;
+    }
+
+    .btn-action.primary:hover {
+      background: #22d3ee;
+      color: #040811;
+    }
+
+    /* Live Disambiguation Verdict Card */
+    .verdict-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 1.25rem;
+      border-left: 4px solid var(--target-green);
+      transition: all 0.3s ease;
+    }
+
+    .verdict-card.noise {
+      border-left-color: var(--noise-red);
+    }
+
+    .verdict-main {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .verdict-tag {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .verdict-status {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .verdict-status.target {
+      color: var(--target-green);
+      text-shadow: 0 0 16px var(--target-green-glow);
+    }
+
+    .verdict-status.noise {
+      color: var(--noise-red);
+      text-shadow: 0 0 16px var(--noise-red-glow);
+    }
+
+    .verdict-metrics {
+      display: flex;
+      gap: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      margin-top: 0.35rem;
+      color: var(--text-muted);
+    }
+
+    .verdict-metrics span strong {
+      color: var(--text-main);
+    }
+
+    .confidence-meter {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+      min-width: 140px;
+    }
+
+    .confidence-val {
+      font-size: 1.4rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+    }
+
+    .confidence-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--border-color);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .confidence-bar-fill {
+      height: 100%;
+      width: 85%;
+      background: var(--target-green);
+      border-radius: 3px;
+      transition: width 0.4s ease, background 0.4s ease;
+    }
+
+    /* SECTION 2: 5-MODEL BENCHMARK & CONFUSION MATRIX */
+    .benchmark-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .benchmark-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .table-container {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow-x: auto;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+
+    th {
+      background: rgba(18, 24, 41, 0.95);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      font-family: var(--font-mono);
+      color: var(--text-main);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr.clickable-row {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    tr.clickable-row:hover {
+      background: var(--bg-card);
+    }
+
+    tr.clickable-row.selected {
+      background: rgba(6, 182, 212, 0.1);
+      border-left: 3px solid var(--radar-cyan);
+    }
+
+    .winner-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: var(--accent-amber);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      margin-left: 0.4rem;
+      font-weight: 600;
+    }
+
+    /* Confusion Matrix Card */
+    .matrix-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .matrix-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .matrix-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .matrix-model-name {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--radar-cyan);
+    }
+
+    .cm-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 0.65rem;
+      margin-top: 0.5rem;
+    }
+
+    .cm-cell {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      text-align: center;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .cm-cell.tn {
+      border-color: rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .cm-cell.tp {
+      border-color: rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .cm-cell.fp {
+      border-color: rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.06);
+    }
+
+    .cm-cell.fn {
+      border-color: rgba(245, 158, 11, 0.35);
+      background: rgba(245, 158, 11, 0.06);
+    }
+
+    .cm-label {
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .cm-val {
+      font-size: 1.5rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      color: #ffffff;
+    }
+
+    .cm-desc {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+    }
+
+    .viva-note {
+      background: rgba(18, 24, 41, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .viva-note strong {
+      color: var(--radar-cyan);
+    }
+
+    /* SECTION 3: ESSENTIAL GRAPHS */
+    .graphs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .graphs-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .graph-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .graph-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .graph-canvas-box {
+      width: 100%;
+      height: 260px;
+      position: relative;
+    }
+
+    /* SECTION 4: DATASET EXPLORER */
+    .dataset-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .dataset-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .filter-pill {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .filter-pill:hover, .filter-pill.active {
+      color: #ffffff;
+      border-color: var(--radar-cyan);
+      background: rgba(6, 182, 212, 0.15);
+    }
+
+    .search-input {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      width: 220px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--radar-cyan);
+    }
+
+    .pruned-column-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.65rem;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+    }
+
+    .pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .page-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.3rem 0.65rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-panel);
+      padding: 1.25rem 1.5rem;
+      margin-top: 3rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--radar-cyan);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Tactical Command Header -->
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>GOOSE BAY RADAR DEFENSE <span class="badge-viva">Viva-Ready Console</span></h1>
+          <p>Phased-Array Target Disambiguation & Radar Signal Classifier</p>
+        </div>
+      </div>
+      <div class="telemetry-pills">
+        <div class="pill"><div class="dot"></div> Backend: <strong id="telemetryStatus">Connecting...</strong></div>
+        <div class="pill">Array: <strong>16 HF Antennas</strong></div>
+        <div class="pill">Dataset: <strong id="telemetryTotal">351 Sweeps</strong></div>
+        <div class="pill">Best Model: <strong id="telemetryModel">Tuned RBF-SVM (97.2%)</strong></div>
+        <div class="pill"><span style="color:#ef4444;">a02: Pruned (σ² = 0.0)</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Jump Navigation -->
+  <nav class="nav-tabs">
+    <div class="nav-tabs-inner">
+      <a href="#section-radar" class="nav-link active">1. Radar HUD & 3-Way Tester</a>
+      <a href="#section-benchmark" class="nav-link">2. 5-Model Benchmark & Confusion Matrix</a>
+      <a href="#section-graphs" class="nav-link">3. Waveform & PCA Visuals</a>
+      <a href="#section-dataset" class="nav-link">4. Dataset Explorer</a>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- SECTION 1: RADAR HUD & 3-WAY SIGNAL TESTER -->
+    <section id="section-radar">
+      <div class="section-title">
+        <div>1. Active Phased-Array Radar HUD & 3-Way Signal Validator</div>
+        <span class="desc">Interactive 360° Scope • Instant Presets • Custom Jamming • CSV Batch Testing</span>
+      </div>
+
+      <div class="radar-grid">
+        <!-- Canvas Radar Scope -->
+        <div class="radar-card">
+          <div class="radar-viewport">
+            <canvas id="radarCanvas" width="380" height="380"></canvas>
+          </div>
+          <div class="radar-controls">
+            <button class="radar-btn active" id="btnToggleRadar">
+              <span id="radarPlayIcon">⏸</span> <span id="radarPlayText">Pause Beam</span>
+            </button>
+            <button class="radar-btn" id="btnToggleAudio">
+              <span>🔊</span> <span id="radarAudioText">Sonar Sound: Off</span>
+            </button>
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <span>Speed:</span>
+              <input type="range" id="radarSpeedSlider" min="0.5" max="3.0" step="0.25" value="1.0" style="width:70px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- 3-Way Signal Tester -->
+        <div class="tester-card">
+          <div class="deck-tabs">
+            <button class="deck-tab-btn active" data-tab="tab-presets">⚡ Instant Presets</button>
+            <button class="deck-tab-btn" data-tab="tab-custom">🎛️ Custom Radar Tuning</button>
+            <button class="deck-tab-btn" data-tab="tab-csv">📁 CSV Upload & Export</button>
+          </div>
+
+          <!-- Way 1: Instant Presets -->
+          <div class="deck-content active" id="tab-presets">
+            <p style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">
+              Select known radar sweep returns from the UCI Ionosphere array to test model discrimination live:
+            </p>
+            <div class="presets-grid">
+              <button class="preset-btn" onclick="loadPreset('good')">
+                <strong><span style="color:var(--target-green);">●</span> Sweep #001</strong>
+                <span class="tag">Ground Truth: Good Target (High SNR)</span>
+              </button>
+              <button class="preset-btn" onclick="loadPreset('bad')">
+                <strong><span style="color:var(--noise-red);">▲</span> Sweep #002</strong>
+                <span class="tag">Ground Truth: Bad Noise / Ghost</span>
+              </button>
+              <button class="preset-btn" onclick="loadPreset('weak')">
+                <strong><span style="color:var(--accent-amber);">◆</span> Sweep #014</strong>
+                <span class="tag">Ground Truth: Weak Boundary Signal</span>
+              </button>
+              <button class="preset-btn" onclick="loadPreset('random')">
+                <strong><span style="color:var(--radar-cyan);">⚄</span> Random Pulse</strong>
+                <span class="tag">Pull random sweep from 351 rows</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Way 2: Custom Noise / Attenuation -->
+          <div class="deck-content" id="tab-custom">
+            <p style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">
+              Inject physical radar interference, attenuation, or shift the classification decision threshold:
+            </p>
+            <div class="slider-group">
+              <div class="slider-header">
+                <span>Signal Attenuation</span>
+                <span class="val" id="valAttenuation">0%</span>
+              </div>
+              <input type="range" id="inputAttenuation" min="0" max="90" step="5" value="0">
+            </div>
+            <div class="slider-group">
+              <div class="slider-header">
+                <span>Gaussian Jamming Noise (σ)</span>
+                <span class="val" id="valNoise">0.00</span>
+              </div>
+              <input type="range" id="inputNoise" min="0.0" max="0.8" step="0.05" value="0.0">
+            </div>
+            <div class="slider-group">
+              <div class="slider-header">
+                <span>Decision Threshold</span>
+                <span class="val" id="valThreshold">0.50</span>
+              </div>
+              <input type="range" id="inputThreshold" min="0.10" max="0.90" step="0.05" value="0.50">
+            </div>
+            <button class="btn-action primary" onclick="runLiveValidation()" style="width:fit-content; margin-top:0.25rem;">
+              Re-Compute Radar Verdict
+            </button>
+          </div>
+
+          <!-- Way 3: CSV Upload & Export -->
+          <div class="deck-content" id="tab-csv">
+            <p style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">
+              Batch test unseen pulses from a CSV file or export cleaned data for defense records:
+            </p>
+            <div class="dropzone" id="csvDropzone" onclick="document.getElementById('csvFileInput').click()">
+              <input type="file" id="csvFileInput" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
+              <div style="font-size:0.85rem; font-weight:600; color:var(--text-main);">Drag & Drop CSV Pulse File</div>
+              <div style="font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono); margin-top:0.25rem;">
+                Must contain 34 complex autocorrelation values per row
+              </div>
+            </div>
+            <div id="batchResultsBox" style="display:none; font-family:var(--font-mono); font-size:0.75rem; background:var(--bg-card); padding:0.75rem; border-radius:6px; border:1px solid var(--border-color);">
+              <div id="batchSummaryText" style="color:var(--radar-cyan); font-weight:600;"></div>
+            </div>
+            <div class="export-btns">
+              <a href="/api/dataset/pruned-csv" class="btn-action">
+                ⬇ Download Pruned CSV (351x33)
+              </a>
+              <a href="/api/dataset/raw-csv" class="btn-action">
+                ⬇ Download Raw CSV (351x34)
+              </a>
+            </div>
+          </div>
+
+          <!-- Live Disambiguation Verdict Card -->
+          <div class="verdict-card" id="verdictCard">
+            <div class="verdict-main">
+              <span class="verdict-tag" id="verdictSubtitle">Active Sweep: SWEEP_001</span>
+              <div class="verdict-status target" id="verdictText">
+                <span id="verdictIcon">●</span>
+                <span id="verdictLabel">VALID IONOSPHERIC TARGET</span>
+              </div>
+              <div class="verdict-metrics">
+                <span>Mean Envelope: <strong id="metricAmp">0.684</strong></span>
+                <span>Lag Smoothness: <strong id="metricSmooth">0.128</strong></span>
+                <span>Threshold: <strong id="metricThresh">0.50</strong></span>
+              </div>
+            </div>
+            <div class="confidence-meter">
+              <div class="confidence-val" id="confidenceValue">98.4%</div>
+              <div class="confidence-bar-bg">
+                <div class="confidence-bar-fill" id="confidenceBar" style="width: 98.4%;"></div>
+              </div>
+              <span style="font-size:0.65rem; color:var(--text-muted); font-family:var(--font-mono);">Detection Confidence</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: 5-MODEL BENCHMARK & CONFUSION MATRIX -->
+    <section id="section-benchmark">
+      <div class="section-title">
+        <div>2. Multi-Model Benchmark & Confusion Matrix</div>
+        <span class="desc">5 ML Architectures Benchmarked on Holdout Test Set (71 Radar Sweeps)</span>
+      </div>
+
+      <div class="benchmark-grid">
+        <!-- 5-Model Comparison Table -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Model Architecture</th>
+                <th>5-Fold CV</th>
+                <th>Test Acc</th>
+                <th>Precision</th>
+                <th>Recall</th>
+                <th>F1-Score</th>
+                <th>ROC-AUC</th>
+                <th>False Alarms</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkTableBody">
+              <tr>
+                <td colspan="8" style="text-align:center; padding:2rem; color:var(--text-muted);">
+                  Loading benchmarks from backend...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Confusion Matrix Visualizer -->
+        <div class="matrix-card">
+          <div class="matrix-header">
+            <span class="matrix-title">Confusion Matrix</span>
+            <span class="matrix-model-name" id="cmModelTitle">Tuned RBF-SVM</span>
+          </div>
+
+          <div class="cm-grid">
+            <div class="cm-cell tn">
+              <span class="cm-label">True Negative (TN)</span>
+              <span class="cm-val" id="cmTN" style="color:var(--target-green);">23</span>
+              <span class="cm-desc">Noise Correctly Rejected</span>
+            </div>
+            <div class="cm-cell fp">
+              <span class="cm-label">False Positive (FP)</span>
+              <span class="cm-val" id="cmFP" style="color:var(--noise-red);">2</span>
+              <span class="cm-desc">Ghost Alarms (Clutter)</span>
+            </div>
+            <div class="cm-cell fn">
+              <span class="cm-label">False Negative (FN)</span>
+              <span class="cm-val" id="cmFN" style="color:var(--accent-amber);">1</span>
+              <span class="cm-desc">Missed Threat / Target</span>
+            </div>
+            <div class="cm-cell tp">
+              <span class="cm-label">True Positive (TP)</span>
+              <span class="cm-val" id="cmTP" style="color:var(--target-green);">45</span>
+              <span class="cm-desc">Valid Targets Detected</span>
+            </div>
+          </div>
+
+          <div class="viva-note">
+            <strong>Viva Academic Insight:</strong> In defense radar, keeping <strong>False Alarms (FP = 2)</strong> minimal prevents scramble fatigue and weapon exhaustion, while near-zero <strong>Missed Targets (FN = 1)</strong> guarantees target detection recall of <strong>97.8%</strong>.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: ESSENTIAL GRAPHS -->
+    <section id="section-graphs">
+      <div class="section-title">
+        <div>3. Physics Feature Extraction & PCA Space Visuals</div>
+        <span class="desc">Autocorrelation Decay Across 17 Pulse Lags & 2D Eigen-Projection</span>
+      </div>
+
+      <div class="graphs-grid">
+        <!-- Graph 1: Autocorrelation Waveform -->
+        <div class="graph-card">
+          <div class="graph-header">
+            <span class="graph-title">17-Pulse Autocorrelation Waveform (Real Component)</span>
+            <span style="font-size:0.72rem; font-family:var(--font-mono); color:var(--text-muted);">Lags 0 to 16</span>
+          </div>
+          <div class="graph-canvas-box">
+            <canvas id="waveformChart"></canvas>
+          </div>
+          <p style="font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono); line-height:1.4;">
+            <strong style="color:var(--target-green);">Target Returns:</strong> Maintain coherent, smooth autocorrelation decay. <strong style="color:var(--noise-red);">Noise Scatter:</strong> Oscillates erratically with zero coherence.
+          </p>
+        </div>
+
+        <!-- Graph 2: 2D PCA Cluster -->
+        <div class="graph-card">
+          <div class="graph-header">
+            <span class="graph-title">2D PCA Projection of 351 Radar Sweeps</span>
+            <span style="font-size:0.72rem; font-family:var(--font-mono); color:var(--radar-cyan);" id="pcaVarianceText">38.0% Total Variance</span>
+          </div>
+          <div class="graph-canvas-box">
+            <canvas id="pcaChart"></canvas>
+          </div>
+          <p style="font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono); line-height:1.4;">
+            Demonstrates why radial-basis kernel (RBF-SVM) outperforms linear classifiers: genuine target returns form a dense manifold surrounded by diffuse ghost noise.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: DATASET EXPLORER -->
+    <section id="section-dataset">
+      <div class="section-title">
+        <div>4. UCI Ionosphere Dataset Inspector & Zero-Variance Pruning</div>
+        <span class="desc">Goose Bay Radar Raw Pulse Records & Physics Features</span>
+      </div>
+
+      <div class="dataset-card">
+        <div class="dataset-toolbar">
+          <div class="filter-pills">
+            <button class="filter-pill active" onclick="setDatasetFilter('all')">All Sweeps (351)</button>
+            <button class="filter-pill" onclick="setDatasetFilter('good')">Good Targets (225)</button>
+            <button class="filter-pill" onclick="setDatasetFilter('bad')">Ghost Noise (126)</button>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="text" id="datasetSearch" class="search-input" placeholder="Search sweep (e.g. 014)..." oninput="handleDatasetSearch(this.value)">
+            <span class="pruned-column-badge" title="Column a02 (Lag 0 Imaginary) is mathematically 0 across all pulses">
+              <s>a02: 0.000</s> (Pruned)
+            </span>
+          </div>
+        </div>
+
+        <div class="table-container" style="border:none; box-shadow:none;">
+          <table>
+            <thead>
+              <tr>
+                <th>Sweep ID</th>
+                <th>Target Class</th>
+                <th>Mean Amplitude μ</th>
+                <th>Lag Smoothness</th>
+                <th>Lag 0 Real (a01)</th>
+                <th><s>Lag 0 Im (a02)</s></th>
+                <th>Lag 1 Real (a03)</th>
+                <th>Lag 1 Im (a04)</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="datasetTableBody">
+              <tr>
+                <td colspan="9" style="text-align:center; padding:1.5rem; color:var(--text-muted);">
+                  Loading pulses from dataset...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-bar">
+          <span id="paginationInfo">Showing 1 to 8 of 351 pulses</span>
+          <div style="display:flex; gap:0.4rem;">
+            <button class="page-btn" id="btnPrevPage" onclick="changePage(-1)">◀ Prev</button>
+            <button class="page-btn" id="btnNextPage" onclick="changePage(1)">Next ▶</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    Goose Bay Phased-Array Military Radar Validation Console &bull; Project by <a href="https://github.com/ItsDevannshhh" target="_blank">Devansh Yaduvanshi</a> &bull; Department of Computer Science & Radar Engineering
+  </footer>
+
+  <script>
+    // =========================================================================
+    // STATE & INITIALIZATION
+    // =========================================================================
+    const state = {
+      radarRunning: true,
+      audioEnabled: false,
+      sweepSpeed: 1.0,
+      activeFeatures: [],
+      currentSweepId: 0,
+      currentPrediction: null,
+      datasetPage: 1,
+      datasetFilter: 'all',
+      datasetQuery: '',
+      benchmarks: [],
+      audioCtx: null
+    };
+
+    let waveformChartInstance = null;
+    let pcaChartInstance = null;
+
+    // Initialize application on DOM load
+    window.addEventListener('DOMContentLoaded', async () => {
+      initRadarScope();
+      setupTabs();
+      setupSliderListeners();
+      await fetchProjectInfo();
+      await fetchBenchmarks();
+      await loadPreset('good');
+      await initCharts();
+      await fetchDatasetRows();
+    });
+
+    // =========================================================================
+    // BACKEND API INTEGRATIONS
+    // =========================================================================
+
+    async function fetchProjectInfo() {
+      try {
+        const res = await fetch('/api/project-info');
+        if (!res.ok) throw new Error('API offline');
+        const data = await res.json();
+        document.getElementById('telemetryStatus').textContent = 'Online';
+        document.getElementById('telemetryTotal').textContent = `${data.total_sweeps} Sweeps`;
+        document.getElementById('telemetryModel').textContent = `${data.winning_model} (${data.top_test_accuracy}%)`;
+      } catch (err) {
+        document.getElementById('telemetryStatus').textContent = 'Fallback Mode';
+      }
+    }
+
+    async function fetchBenchmarks() {
+      try {
+        const res = await fetch('/api/benchmarks');
+        const benchmarks = await res.json();
+        state.benchmarks = benchmarks;
+
+        const tbody = document.getElementById('benchmarkTableBody');
+        tbody.innerHTML = '';
+
+        benchmarks.forEach((b, idx) => {
+          const isWinner = b.model.toLowerCase().includes('svm') || idx === 3;
+          const tr = document.createElement('tr');
+          tr.className = `clickable-row ${isWinner ? 'selected' : ''}`;
+          tr.onclick = () => selectModelBenchmark(b.model);
+
+          tr.innerHTML = `
+            <td>
+              <strong>${b.model}</strong>
+              ${isWinner ? '<span class="winner-badge">Top Pick 👑</span>' : ''}
+            </td>
+            <td>${b.cv_acc.toFixed(2)}%</td>
+            <td style="color:${isWinner ? 'var(--target-green)' : 'var(--text-main)'}; font-weight:600;">${b.test_acc.toFixed(2)}%</td>
+            <td>${b.precision.toFixed(2)}%</td>
+            <td>${b.recall.toFixed(2)}%</td>
+            <td>${b.f1.toFixed(2)}%</td>
+            <td>${b.auc.toFixed(4)}</td>
+            <td style="color:${b.fp > 5 ? 'var(--noise-red)' : 'var(--text-muted)'};">${b.fp}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // Initialize confusion matrix with top model
+        await fetchConfusionMatrix('SVM (RBF Kernel)');
+      } catch (err) {
+        console.error('Failed to load benchmarks:', err);
+      }
+    }
+
+    async function selectModelBenchmark(modelName) {
+      document.querySelectorAll('#benchmarkTableBody tr').forEach(r => r.classList.remove('selected'));
+      event.currentTarget.classList.add('selected');
+      await fetchConfusionMatrix(modelName);
+    }
+
+    async function fetchConfusionMatrix(modelName) {
+      try {
+        const res = await fetch(`/api/confusion-matrix?model_name=${encodeURIComponent(modelName)}`);
+        const cm = await res.json();
+        document.getElementById('cmModelTitle').textContent = cm.model;
+        document.getElementById('cmTN').textContent = cm.tn;
+        document.getElementById('cmFP').textContent = cm.fp;
+        document.getElementById('cmFN').textContent = cm.fn;
+        document.getElementById('cmTP').textContent = cm.tp;
+      } catch (err) {
+        console.error('Failed to load confusion matrix:', err);
+      }
+    }
+
+    // =========================================================================
+    // 3-WAY SIGNAL TESTER LOGIC
+    // =========================================================================
+
+    async function loadPreset(presetType) {
+      try {
+        const res = await fetch(`/api/signals/preset/${presetType}`);
+        const data = await res.json();
+        state.activeFeatures = data.raw_features;
+        state.currentSweepId = data.signal_id;
+        document.getElementById('verdictSubtitle').textContent = `Active Sweep: ${data.sweep_label} (Ground Truth: ${data.ground_truth})`;
+        await runLiveValidation();
+        updateWaveformChartSingle(data.real, data.envelope);
+      } catch (err) {
+        console.error('Failed to load preset signal:', err);
+      }
+    }
+
+    async function runLiveValidation() {
+      if (!state.activeFeatures || state.activeFeatures.length !== 34) return;
+
+      const attenuation = parseFloat(document.getElementById('inputAttenuation').value);
+      const noise = parseFloat(document.getElementById('inputNoise').value);
+      const threshold = parseFloat(document.getElementById('inputThreshold').value);
+
+      try {
+        const res = await fetch('/api/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            features: state.activeFeatures,
+            noise_sigma: noise,
+            attenuation_pct: attenuation,
+            threshold: threshold
+          })
+        });
+        const result = await res.json();
+        state.currentPrediction = result;
+        renderVerdict(result);
+      } catch (err) {
+        console.error('Validation error:', err);
+      }
+    }
+
+    function renderVerdict(res) {
+      const card = document.getElementById('verdictCard');
+      const text = document.getElementById('verdictText');
+      const icon = document.getElementById('verdictIcon');
+      const label = document.getElementById('verdictLabel');
+      const confVal = document.getElementById('confidenceValue');
+      const confBar = document.getElementById('confidenceBar');
+
+      document.getElementById('metricAmp').textContent = res.mean_pulse_amplitude.toFixed(3);
+      document.getElementById('metricSmooth').textContent = res.lag_smoothness.toFixed(3);
+      document.getElementById('metricThresh').textContent = res.threshold.toFixed(2);
+
+      if (res.is_target) {
+        card.className = 'verdict-card';
+        text.className = 'verdict-status target';
+        icon.textContent = '●';
+        label.textContent = 'VALID IONOSPHERIC TARGET';
+        confBar.style.background = 'var(--target-green)';
+      } else {
+        card.className = 'verdict-card noise';
+        text.className = 'verdict-status noise';
+        icon.textContent = '▲';
+        label.textContent = 'GHOST NOISE / CLUTTER';
+        confBar.style.background = 'var(--noise-red)';
+      }
+
+      confVal.textContent = `${res.confidence_pct.toFixed(1)}%`;
+      confBar.style.width = `${res.confidence_pct}%`;
+    }
+
+    // CSV Batch Upload
+    async function handleCSVUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const lines = e.target.result.trim().split('\n');
+        const rows = [];
+        for (const line of lines) {
+          const parts = line.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+          if (parts.length >= 34) {
+            rows.push(parts.slice(0, 34));
+          }
+        }
+
+        if (rows.length === 0) {
+          alert('No valid 34-feature rows found in CSV');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/validate-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: rows })
+          });
+          const data = await res.json();
+          const box = document.getElementById('batchResultsBox');
+          const sumText = document.getElementById('batchSummaryText');
+          box.style.display = 'block';
+          sumText.innerHTML = `
+            ✔ Processed ${data.total_processed} pulses:<br>
+            <span style="color:var(--target-green)">• Targets Detected: ${data.targets_detected} (${data.target_ratio_pct}%)</span><br>
+            <span style="color:var(--noise-red)">• Ghost Noise Rejected: ${data.noise_detected}</span>
+          `;
+        } catch (err) {
+          alert('Batch validation failed');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // =========================================================================
+    // DATASET EXPLORER LOGIC
+    // =========================================================================
+
+    async function fetchDatasetRows() {
+      const { datasetPage, datasetFilter, datasetQuery } = state;
+      try {
+        const url = `/api/dataset/rows?page=${datasetPage}&page_size=8&target=${datasetFilter}&q=${encodeURIComponent(datasetQuery)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const tbody = document.getElementById('datasetTableBody');
+        tbody.innerHTML = '';
+
+        if (!data.rows || data.rows.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No pulses matching query</td></tr>';
+          document.getElementById('paginationInfo').textContent = '0 pulses found';
+          return;
+        }
+
+        data.rows.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><strong>${r.sweep_id}</strong></td>
+            <td>
+              <span style="display:inline-flex; align-items:center; gap:0.3rem; color:${r.is_good ? 'var(--target-green)' : 'var(--noise-red)'}; font-weight:600;">
+                ${r.is_good ? '● Good Target' : '▲ Ghost Noise'}
+              </span>
+            </td>
+            <td>${r.mean_amp}</td>
+            <td>${r.smoothness}</td>
+            <td>${r.a01}</td>
+            <td style="color:var(--text-dim);"><s>${r.a02}</s></td>
+            <td>${r.a03}</td>
+            <td>${r.a04}</td>
+            <td>
+              <button class="radar-btn" style="padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="loadSpecificSweep(${r.index})">
+                Inspect Radar
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        const startIdx = (data.page - 1) * data.page_size + 1;
+        const endIdx = Math.min(data.page * data.page_size, data.total);
+        document.getElementById('paginationInfo').textContent = `Showing ${startIdx} to ${endIdx} of ${data.total} pulses`;
+        document.getElementById('btnPrevPage').disabled = data.page <= 1;
+        document.getElementById('btnNextPage').disabled = data.page >= data.total_pages;
+      } catch (err) {
+        console.error('Failed to load dataset rows:', err);
+      }
+    }
+
+    async function loadSpecificSweep(sweepIndex) {
+      try {
+        const res = await fetch(`/api/signals/${sweepIndex}`);
+        const data = await res.json();
+        state.activeFeatures = data.raw_features;
+        state.currentSweepId = data.signal_id;
+        document.getElementById('verdictSubtitle').textContent = `Active Sweep: ${data.sweep_label} (Ground Truth: ${data.ground_truth})`;
+        await runLiveValidation();
+        updateWaveformChartSingle(data.real, data.envelope);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (err) {
+        console.error('Failed to load specific sweep:', err);
+      }
+    }
+
+    function setDatasetFilter(filter) {
+      state.datasetFilter = filter;
+      state.datasetPage = 1;
+      document.querySelectorAll('.filter-pill').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      fetchDatasetRows();
+    }
+
+    function handleDatasetSearch(val) {
+      state.datasetQuery = val;
+      state.datasetPage = 1;
+      fetchDatasetRows();
+    }
+
+    function changePage(delta) {
+      state.datasetPage += delta;
+      fetchDatasetRows();
+    }
+
+    // =========================================================================
+    // CHARTS (WAVEFORM & 2D PCA)
+    // =========================================================================
+
+    async function initCharts() {
+      // 1. Waveform Chart
+      try {
+        const wRes = await fetch('/api/graphs/waveform');
+        const wData = await wRes.json();
+
+        const ctxW = document.getElementById('waveformChart').getContext('2d');
+        waveformChartInstance = new Chart(ctxW, {
+          type: 'line',
+          data: {
+            labels: wData.lags,
+            datasets: [
+              {
+                label: 'Valid Target Pulse (Real)',
+                data: wData.good_real,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3
+              },
+              {
+                label: 'Ghost Noise Clutter (Real)',
+                data: wData.bad_real,
+                borderColor: '#ef4444',
+                borderDash: [4, 4],
+                borderWidth: 1.5,
+                pointRadius: 2,
+                tension: 0.2
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                grid: { color: '#1e293b' }
+              },
+              y: {
+                min: -1.1,
+                max: 1.1,
+                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                grid: { color: '#1e293b' }
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error('Failed to init waveform chart:', err);
+      }
+
+      // 2. PCA Scatter Chart
+      try {
+        const pRes = await fetch('/api/graphs/pca');
+        const pData = await pRes.json();
+        document.getElementById('pcaVarianceText').textContent = `${pData.total_variance_explained}% Total 2D Variance`;
+
+        const goodPoints = pData.points.filter(p => p.is_good).map(p => ({ x: p.x, y: p.y }));
+        const badPoints = pData.points.filter(p => !p.is_good).map(p => ({ x: p.x, y: p.y }));
+
+        const ctxP = document.getElementById('pcaChart').getContext('2d');
+        pcaChartInstance = new Chart(ctxP, {
+          type: 'scatter',
+          data: {
+            datasets: [
+              {
+                label: 'Good Targets (225)',
+                data: goodPoints,
+                backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                borderColor: '#10b981',
+                borderWidth: 1,
+                pointRadius: 3.5
+              },
+              {
+                label: 'Ghost Noise (126)',
+                data: badPoints,
+                backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                borderColor: '#ef4444',
+                borderWidth: 1,
+                pointRadius: 3.5
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }
+              }
+            },
+            scales: {
+              x: {
+                title: { display: true, text: `PC1 (${pData.explained_variance[0]}% var)`, color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
+                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                grid: { color: '#1e293b' }
+              },
+              y: {
+                title: { display: true, text: `PC2 (${pData.explained_variance[1]}% var)`, color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
+                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                grid: { color: '#1e293b' }
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error('Failed to init PCA chart:', err);
+      }
+    }
+
+    function updateWaveformChartSingle(realVals, envelopeVals) {
+      if (!waveformChartInstance) return;
+      waveformChartInstance.data.datasets[0].label = 'Current Sweep Waveform (Real)';
+      waveformChartInstance.data.datasets[0].data = realVals;
+      waveformChartInstance.update();
+    }
+
+    // =========================================================================
+    // CANVAS RADAR SCOPE ANIMATION
+    // =========================================================================
+
+    function initRadarScope() {
+      const canvas = document.getElementById('radarCanvas');
+      const ctx = canvas.getContext('2d');
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = cx - 12;
+
+      let angle = 0;
+      let lastPingTime = 0;
+
+      function drawRadar() {
+        if (!state.radarRunning) {
+          requestAnimationFrame(drawRadar);
+          return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. Background scope base
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#040811';
+        ctx.fill();
+
+        // 2. Concentric Range Rings (50, 100, 150, 200, 250 km)
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)';
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, (radius / 4) * i, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // 3. Radial Bearing Lines
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.15)';
+        for (let deg = 0; deg < 360; deg += 30) {
+          const rad = (deg * Math.PI) / 180;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + radius * Math.cos(rad), cy + radius * Math.sin(rad));
+          ctx.stroke();
+        }
+
+        // 4. Cardinal Direction Labels
+        ctx.fillStyle = '#06b6d4';
+        ctx.font = '10px JetBrains Mono';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('000° N', cx, cy - radius + 12);
+        ctx.fillText('090° E', cx + radius - 16, cy);
+        ctx.fillText('180° S', cx, cy + radius - 12);
+        ctx.fillText('270° W', cx - radius + 16, cy);
+
+        // 5. Active Target Blip
+        const isTarget = state.currentPrediction ? state.currentPrediction.is_target : true;
+        const targetColor = isTarget ? '#10b981' : '#ef4444';
+        const targetAngle = 0.85; // Fixed position for demo sweep
+        const targetDist = radius * 0.58;
+        const tx = cx + targetDist * Math.cos(targetAngle);
+        const ty = cy + targetDist * Math.sin(targetAngle);
+
+        // Angle diff to determine beam highlight
+        let angleDiff = Math.abs(angle - targetAngle);
+        if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+
+        const isHit = angleDiff < 0.25;
+
+        // Render Blip
+        ctx.beginPath();
+        ctx.arc(tx, ty, isHit ? 7 : 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = targetColor;
+        ctx.shadowColor = targetColor;
+        ctx.shadowBlur = isHit ? 20 : 6;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Blip telemetry tag
+        if (isHit) {
+          ctx.fillStyle = targetColor;
+          ctx.font = '9px JetBrains Mono';
+          ctx.fillText(isTarget ? 'TARGET: 145km' : 'CLUTTER: 145km', tx + 24, ty - 6);
+
+          // Audio Ping on sweep hit
+          const now = Date.now();
+          if (state.audioEnabled && now - lastPingTime > 1200) {
+            playSonarPing(isTarget ? 880 : 440);
+            lastPingTime = now;
+          }
+        }
+
+        // 6. Rotating Beam Gradient Sweep
+        const sweepGradient = ctx.createConicGradient(angle, cx, cy);
+        sweepGradient.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
+        sweepGradient.addColorStop(0.12, 'rgba(6, 182, 212, 0.08)');
+        sweepGradient.addColorStop(0.25, 'rgba(6, 182, 212, 0.0)');
+        sweepGradient.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = sweepGradient;
+        ctx.fill();
+
+        // 7. Sharp Beam Line
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Advance angle (18 RPM standard scaled by slider)
+        angle += 0.03 * state.sweepSpeed;
+        if (angle > Math.PI * 2) angle -= Math.PI * 2;
+
+        requestAnimationFrame(drawRadar);
+      }
+
+      requestAnimationFrame(drawRadar);
+
+      // Radar Control Buttons
+      const btnToggle = document.getElementById('btnToggleRadar');
+      btnToggle.onclick = () => {
+        state.radarRunning = !state.radarRunning;
+        document.getElementById('radarPlayIcon').textContent = state.radarRunning ? '⏸' : '▶';
+        document.getElementById('radarPlayText').textContent = state.radarRunning ? 'Pause Beam' : 'Resume Beam';
+        btnToggle.classList.toggle('active', state.radarRunning);
+      };
+
+      const btnAudio = document.getElementById('btnToggleAudio');
+      btnAudio.onclick = () => {
+        state.audioEnabled = !state.audioEnabled;
+        document.getElementById('radarAudioText').textContent = state.audioEnabled ? 'Sonar Sound: On' : 'Sonar Sound: Off';
+        btnAudio.classList.toggle('active', state.audioEnabled);
+        if (state.audioEnabled && !state.audioCtx) {
+          state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      };
+
+      document.getElementById('radarSpeedSlider').oninput = (e) => {
+        state.sweepSpeed = parseFloat(e.target.value);
+      };
+    }
+
+    // Web Audio API Synthesized Sonar Ping
+    function playSonarPing(freq = 880) {
+      try {
+        if (!state.audioCtx) return;
+        const osc = state.audioCtx.createOscillator();
+        const gain = state.audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, state.audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.5, state.audioCtx.currentTime + 0.35);
+
+        gain.gain.setValueAtTime(0.12, state.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, state.audioCtx.currentTime + 0.35);
+
+        osc.connect(gain);
+        gain.connect(state.audioCtx.destination);
+
+        osc.start();
+        osc.stop(state.audioCtx.currentTime + 0.35);
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // UI HELPERS (TABS & SLIDERS)
+    // =========================================================================
+
+    function setupTabs() {
+      const tabs = document.querySelectorAll('.deck-tab-btn');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.deck-content').forEach(c => c.classList.remove('active'));
+
+          tab.classList.add('active');
+          const targetId = tab.getAttribute('data-tab');
+          document.getElementById(targetId).classList.add('active');
+        });
+      });
+    }
+
+    function setupSliderListeners() {
+      const att = document.getElementById('inputAttenuation');
+      const noise = document.getElementById('inputNoise');
+      const thresh = document.getElementById('inputThreshold');
+
+      att.oninput = (e) => {
+        document.getElementById('valAttenuation').textContent = `${e.target.value}%`;
+      };
+      att.onchange = () => runLiveValidation();
+
+      noise.oninput = (e) => {
+        document.getElementById('valNoise').textContent = parseFloat(e.target.value).toFixed(2);
+      };
+      noise.onchange = () => runLiveValidation();
+
+      thresh.oninput = (e) => {
+        document.getElementById('valThreshold').textContent = parseFloat(e.target.value).toFixed(2);
+      };
+      thresh.onchange = () => runLiveValidation();
+    }
+  </script>
+</body>
+</html>
